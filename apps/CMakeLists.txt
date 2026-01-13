@@ -9,5 +9,4 @@ target_link_libraries(test_pangolin PRIVATE
 )
 
 add_executable(mono_demo mono_demo.cpp)
-
-target_link_libraries(mono_demo PRIVATE visionx_slam)
+target_link_libraries(mono_demo PRIVATE visionx_core)
