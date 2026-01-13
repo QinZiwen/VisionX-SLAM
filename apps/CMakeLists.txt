@@ -7,3 +7,7 @@ target_link_libraries(test_pangolin PRIVATE
     pango_core     # 核心基础模块
     pango_opengl   # OpenGL 支持
 )
+
+add_executable(mono_demo mono_demo.cpp)
+
+target_link_libraries(mono_demo PRIVATE visionx_slam)
