@@ -3,6 +3,16 @@
   "version-string": "0.1.0",
   "builtin-baseline": "25b458671af03578e6a34edd8f0d1ac85e084df4",
   "dependencies": [
-    "sophus"
+    "eigen3",
+    "sophus",
+    {
+      "name": "opencv4",
+      "features": ["contrib", "ffmpeg"]
+    },
+    "glog",
+    "gtest",
+    "gflags",
+    "fmt",
+    "pangolin"
   ]
 }
