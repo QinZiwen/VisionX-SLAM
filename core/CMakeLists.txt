@@ -7,12 +7,10 @@ target_compile_options(visionx_core PRIVATE
     -Werror=return-type # 如果函数没写 return 直接报错
 )
 
-target_sources(visionx_core
-    PRIVATE
-        common/logger.cpp
-        camera/camera.cpp
-        frame/frame.cpp
+file(GLOB_RECURSE ALL_SOURCE_FILES 
+    "./*.cpp"
 )
+target_sources(visionx_core PRIVATE ${ALL_SOURCE_FILES})
 
 target_include_directories(visionx_core PUBLIC ${PROJECT_SOURCE_DIR}/core)
 target_link_libraries(visionx_core

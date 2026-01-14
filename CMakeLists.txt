@@ -26,5 +26,7 @@ message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "Pangolin Found: ${Pangolin_FOUND}")
 message(STATUS "    Pangolin Libraries: ${Pangolin_LIBRARIES}")
 
+include_directories(core)
+
 add_subdirectory(core)
 add_subdirectory(apps)
