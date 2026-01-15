@@ -7,9 +7,7 @@ target_compile_options(visionx_core PRIVATE
     -Werror=return-type # 如果函数没写 return 直接报错
 )
 
-file(GLOB_RECURSE ALL_SOURCE_FILES 
-    "./*.cpp"
-)
+file(GLOB_RECURSE ALL_SOURCE_FILES "./*.cpp")
 target_sources(visionx_core PRIVATE ${ALL_SOURCE_FILES})
 
 target_include_directories(visionx_core PUBLIC ${PROJECT_SOURCE_DIR}/core)

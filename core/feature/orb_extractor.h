@@ -12,9 +12,7 @@ public:
                  float scale_factor = 1.2f,
                  int n_levels = 8);
 
-    virtual void Extract(
-        Frame& frame,
-        cv::Mat* descriptors = nullptr) override;
+    virtual void Extract(Frame& frame) override;
 
 private:
     cv::Ptr<cv::ORB> orb_;

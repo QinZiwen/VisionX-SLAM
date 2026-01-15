@@ -10,10 +10,7 @@ namespace visionx {
 class FeatureExtractor {
 public:
     virtual ~FeatureExtractor() = default;
-
-    virtual void Extract(
-        Frame& frame,
-        cv::Mat* descriptors = nullptr) = 0;
+    virtual void Extract(Frame& frame) = 0;
 };
 
 } // namespace visionx

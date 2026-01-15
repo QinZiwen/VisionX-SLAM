@@ -11,10 +11,7 @@ ORBExtractor::ORBExtractor(int n_features,
         n_levels);
 }
 
-void ORBExtractor::Extract(
-    Frame& frame,
-    cv::Mat* descriptors) {
-
+void ORBExtractor::Extract(Frame& frame) {
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat desc;
 
@@ -35,9 +32,7 @@ void ORBExtractor::Extract(
         features.emplace_back(f);
     }
 
-    if (descriptors) {
-        *descriptors = desc.clone();
-    }
+    frame.Descriptors() = desc.clone();
 }
 
 } // namespace visionx

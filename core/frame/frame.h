@@ -8,9 +8,9 @@
 #include <Sophus/se3.hpp>
 #include <opencv2/core.hpp>
 
-namespace visionx {
+#include "camera/camera.h"
 
-class Camera;
+namespace visionx {
 
 struct Feature {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -40,6 +40,8 @@ public:
     // ===== feature =====
     std::vector<Feature>& Features() { return features_; }
     const std::vector<Feature>& Features() const { return features_; }
+    cv::Mat& Descriptors() { return descriptors_; }
+    const cv::Mat& Descriptors() const { return descriptors_; }
 
     std::shared_ptr<Camera> GetCamera() const { return camera_; }
 
@@ -55,6 +57,7 @@ private:
     cv::Mat image_;
 
     std::vector<Feature> features_;
+    cv::Mat descriptors_;
 };
 
 } // namespace visionx
