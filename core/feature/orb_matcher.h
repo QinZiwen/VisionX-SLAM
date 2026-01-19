@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <opencv2/core.hpp>
+#include <vector>
 
 #include "frame/frame.h"
 
@@ -14,14 +14,13 @@ public:
         int min_matches = 50;
     };
 
-    explicit ORBMatcher(const Options& options = Options());
+    explicit ORBMatcher(const Options& options);
 
-    int Match(const Frame::Ptr& last,
-              const Frame::Ptr& curr,
+    int Match(const Frame::Ptr& last, const Frame::Ptr& curr,
               std::vector<cv::DMatch>& matches);
 
 private:
     Options options_;
 };
 
-} // namespace visionx
+}  // namespace visionx

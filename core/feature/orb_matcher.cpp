@@ -1,15 +1,14 @@
 #include "feature/orb_matcher.h"
 
-#include <opencv2/features2d.hpp>
 #include <glog/logging.h>
+
+#include <opencv2/features2d.hpp>
 
 namespace visionx {
 
-ORBMatcher::ORBMatcher(const Options& options)
-    : options_(options) {}
+ORBMatcher::ORBMatcher(const Options& options) : options_(options) {}
 
-int ORBMatcher::Match(const Frame::Ptr& last,
-                      const Frame::Ptr& curr,
+int ORBMatcher::Match(const Frame::Ptr& last, const Frame::Ptr& curr,
                       std::vector<cv::DMatch>& matches) {
     matches.clear();
 
@@ -36,12 +35,11 @@ int ORBMatcher::Match(const Frame::Ptr& last,
         }
     }
 
-    if (matches.size() < options_.min_matches) {
-        LOG(WARNING) << "[ORBMatcher] Too few matches: "
-                     << matches.size();
+    if (matches.size() < static_cast<size_t>(options_.min_matches)) {
+        LOG(WARNING) << "[ORBMatcher] Too few matches: " << matches.size();
     }
 
     return static_cast<int>(matches.size());
 }
 
-} // namespace visionx
+}  // namespace visionx
