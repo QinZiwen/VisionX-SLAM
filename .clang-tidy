@@ -1,0 +1,36 @@
+---
+# 规则说明：
+# -* : 禁用所有规则
+# bugprone-* : 捕捉明显的逻辑错误（如内存泄漏、除以0、悬空指针等）
+# modernize-* : 强制使用现代 C++ 特性（如 nullptr, auto, override）
+# readability-redundant-* : 去掉冗余代码（如多余的控制流、多余的转换）
+# performance-* : 捕捉常见的性能陷阱（如不必要的对象拷贝）
+Checks: >
+  -*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-redundant-*,
+  readability-container-size-empty,
+  readability-identifier-naming,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -llvm-header-guard
+
+WarningsAsErrors: ''
+
+# 只检查核心路径下的头文件（如 core/ 文件夹）
+HeaderFilterRegex: 'core/.*'
+
+# 检查选项配置
+CheckOptions:
+  # 命名规范示例（可选）：强制要求变量名用小写
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  # 强制要求类名用大驼峰
+  - key:             readability-identifier-naming.ClassCase
+    value:           CamelCase
+  # 允许最多 3 层的嵌套深度
+  - key:             readability-function-size.LineThreshold
+    value:           100
+---

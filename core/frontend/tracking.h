@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <Sophus/se3.hpp>
 #include <memory>
 #include <opencv2/core.hpp>
+#include <sophus/se3.hpp>
 #include <vector>
 
 #include "feature/feature_extractor.h"
 #include "feature/feature_matcher.h"
 #include "frame/frame.h"
+#include "map/map.h"
 
 namespace visionx {
 
@@ -27,7 +28,7 @@ public:
 
     Tracking(const Options& options,
              std::shared_ptr<FeatureExtractor> extractor,
-             std::shared_ptr<FeatureMatcher> matcher);
+             std::shared_ptr<FeatureMatcher> matcher, std::shared_ptr<Map> map);
 
     // 前端主入口
     void ProcessFrame(Frame::Ptr frame);
@@ -77,6 +78,9 @@ private:
 
     std::shared_ptr<FeatureExtractor> extractor_;
     std::shared_ptr<FeatureMatcher> matcher_;
+
+    std::shared_ptr<Map> map_;
+    uint64_t landmark_id_ = 0;
 };
 
 }  // namespace visionx

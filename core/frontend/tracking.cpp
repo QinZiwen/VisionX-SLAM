@@ -1,8 +1,9 @@
 #include "frontend/tracking.h"
 
+#include <glog/logging.h>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/eigen.hpp>
-#include <glog/logging.h>
 
 namespace visionx {
 
@@ -10,10 +11,12 @@ namespace visionx {
 
 Tracking::Tracking(const Options& options,
                    std::shared_ptr<FeatureExtractor> extractor,
-                   std::shared_ptr<FeatureMatcher> matcher)
+                   std::shared_ptr<FeatureMatcher> matcher,
+                   std::shared_ptr<Map> map)
     : options_(options),
       extractor_(std::move(extractor)),
-      matcher_(std::move(matcher)) {}
+      matcher_(std::move(matcher)),
+      map_(std::move(map)) {}
 
 // ================= 主入口 =================
 
@@ -54,9 +57,7 @@ void Tracking::InitFrame(const Frame::Ptr& frame) {
 
 // ================= Tracking 主逻辑 =================
 
-bool Tracking::Track() {
-    return TrackLastFrame();
-}
+bool Tracking::Track() { return TrackLastFrame(); }
 
 bool Tracking::TrackLastFrame() {
     if (!last_frame_) {
@@ -71,17 +72,12 @@ bool Tracking::TrackLastFrame() {
     }
 
     int inliers = 0;
-    bool success = EstimatePoseByEssential(
-        current_frame_,
-        last_frame_,
-        matches,
-        inliers);
+    bool success =
+        EstimatePoseByEssential(current_frame_, last_frame_, matches, inliers);
 
     last_inliers_ = inliers;
     last_parallax_ = ComputeParallax(
-        last_keyframe_ ? last_keyframe_ : last_frame_,
-        current_frame_,
-        matches);
+        last_keyframe_ ? last_keyframe_ : last_frame_, current_frame_, matches);
 
     return success && inliers >= options_.min_inliers;
 }
@@ -109,12 +105,10 @@ void Tracking::HandleTrackingFailure() {
 
 // ================= 位姿估计 =================
 
-bool Tracking::EstimatePoseByEssential(
-    const Frame::Ptr& curr,
-    const Frame::Ptr& last,
-    const std::vector<cv::DMatch>& matches,
-    int& inliers) {
-
+bool Tracking::EstimatePoseByEssential(const Frame::Ptr& curr,
+                                       const Frame::Ptr& last,
+                                       const std::vector<cv::DMatch>& matches,
+                                       int& inliers) {
     std::vector<cv::Point2f> pts_last, pts_curr;
     pts_last.reserve(matches.size());
     pts_curr.reserve(matches.size());
@@ -127,23 +121,19 @@ bool Tracking::EstimatePoseByEssential(
     }
 
     auto cam = curr->GetCamera();
-    cv::Mat K = (cv::Mat_<double>(3, 3) <<
-        cam->fx(), 0.0,       cam->cx(),
-        0.0,       cam->fy(), cam->cy(),
-        0.0,       0.0,       1.0);
+    cv::Mat K = (cv::Mat_<double>(3, 3) << cam->fx(), 0.0, cam->cx(), 0.0,
+                 cam->fy(), cam->cy(), 0.0, 0.0, 1.0);
 
     cv::Mat mask;
-    cv::Mat E = cv::findEssentialMat(
-        pts_last, pts_curr, K,
-        cv::RANSAC, 0.999, 1.0, mask);
+    cv::Mat E = cv::findEssentialMat(pts_last, pts_curr, K, cv::RANSAC, 0.999,
+                                     1.0, mask);
 
     if (E.empty()) {
         return false;
     }
 
     cv::Mat R, t;
-    inliers = cv::recoverPose(
-        E, pts_last, pts_curr, K, R, t, mask);
+    inliers = cv::recoverPose(E, pts_last, pts_curr, K, R, t, mask);
 
     if (inliers < options_.min_inliers) {
         return false;
@@ -163,11 +153,8 @@ bool Tracking::EstimatePoseByEssential(
 
 // ================= KeyFrame 决策 =================
 
-double Tracking::ComputeParallax(
-    const Frame::Ptr& ref,
-    const Frame::Ptr& curr,
-    const std::vector<cv::DMatch>& matches) {
-
+double Tracking::ComputeParallax(const Frame::Ptr& ref, const Frame::Ptr& curr,
+                                 const std::vector<cv::DMatch>& matches) {
     double sum = 0.0;
     int cnt = 0;
 
@@ -181,14 +168,11 @@ double Tracking::ComputeParallax(
 }
 
 bool Tracking::NeedNewKeyFrame() const {
-    if (state_ != State::TRACKING_GOOD)
-        return false;
+    if (state_ != State::TRACKING_GOOD) return false;
 
-    if (last_inliers_ < options_.min_keyframe_inliers)
-        return false;
+    if (last_inliers_ < options_.min_keyframe_inliers) return false;
 
-    if (last_parallax_ < options_.min_parallax)
-        return false;
+    if (last_parallax_ < options_.min_parallax) return false;
 
     return true;
 }
@@ -196,6 +180,7 @@ bool Tracking::NeedNewKeyFrame() const {
 void Tracking::CreateKeyFrame() {
     TriangulateWithLastKeyFrame();
     last_keyframe_ = current_frame_;
+    map_->InsertKeyFrame(current_frame_);
 
     LOG(INFO) << "[Tracking] New keyframe created.";
 }
@@ -203,17 +188,13 @@ void Tracking::CreateKeyFrame() {
 // ================= 三角化 =================
 
 Eigen::Matrix<double, 3, 4> Tracking::ProjectionMatrix(
-    const Sophus::SE3d& T_cw,
-    const Camera& cam) const {
-
+    const Sophus::SE3d& T_cw, const Camera& cam) const {
     Eigen::Matrix<double, 3, 4> P;
     P.leftCols<3>() = T_cw.rotationMatrix();
     P.rightCols<1>() = T_cw.translation();
 
     Eigen::Matrix3d K;
-    K << cam.fx(), 0, cam.cx(),
-         0, cam.fy(), cam.cy(),
-         0, 0, 1;
+    K << cam.fx(), 0, cam.cx(), 0, cam.fy(), cam.cy(), 0, 0, 1;
 
     return K * P;
 }
@@ -229,26 +210,27 @@ void Tracking::TriangulateWithLastKeyFrame() {
     auto P1 = ProjectionMatrix(last_keyframe_->Pose(), *cam);
     auto P2 = ProjectionMatrix(current_frame_->Pose(), *cam);
 
-    int cnt = 0;
     for (const auto& m : matches) {
         const auto& px1 = last_keyframe_->Features()[m.queryIdx].position;
         const auto& px2 = current_frame_->Features()[m.trainIdx].position;
 
-        Eigen::Vector3d p = TriangulatePoint(P1, P2, px1, px2);
-        if (p.z() > 0) {
-            cnt++;
+        Eigen::Vector3d pw = TriangulatePoint(P1, P2, px1, px2);
+        if (pw.z() <= 0) {
+            continue;
         }
-    }
 
-    LOG(INFO) << "[Tracking] Triangulated " << cnt << " points.";
+        auto lm = std::make_shared<Landmark>(landmark_id_++, pw);
+        lm->AddObservation(last_keyframe_->Id(), m.queryIdx);
+        lm->AddObservation(current_frame_->Id(), m.trainIdx);
+
+        map_->InsertLandmark(lm);
+    }
 }
 
 Eigen::Vector3d Tracking::TriangulatePoint(
-    const Eigen::Matrix<double,3,4>& P1,
-    const Eigen::Matrix<double,3,4>& P2,
-    const Eigen::Vector2d& x1,
+    const Eigen::Matrix<double, 3, 4>& P1,
+    const Eigen::Matrix<double, 3, 4>& P2, const Eigen::Vector2d& x1,
     const Eigen::Vector2d& x2) const {
-
     Eigen::Matrix4d A;
     A.row(0) = x1(0) * P1.row(2) - P1.row(0);
     A.row(1) = x1(1) * P1.row(2) - P1.row(1);
@@ -261,4 +243,4 @@ Eigen::Vector3d Tracking::TriangulatePoint(
     return X.head<3>() / X(3);
 }
 
-} // namespace visionx
+}  // namespace visionx

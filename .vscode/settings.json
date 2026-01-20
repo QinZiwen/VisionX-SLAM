@@ -1,0 +1,13 @@
+{
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.clangTidy.path": "/opt/homebrew/opt/llvm/bin/clang-tidy",
+    // 让 Tidy 自动寻找项目根目录下的 .clang-tidy 配置文件
+    "C_Cpp.codeAnalysis.clangTidy.config": "",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.codeAnalysis.runAutomatically": true,
+    // 只有路径匹配正则的文件才会被扫描，这样可以跳过 vcpkg 的第三方库
+    "C_Cpp.codeAnalysis.clangTidy.headerFilter": "${workspaceFolder}/core/.*",
+    "editor.formatOnSave": true,
+    "C_Cpp.clang_format_path": "/opt/homebrew/opt/llvm/bin/clang-format",
+    "C_Cpp.clang_format_style": "file"
+}

@@ -3,6 +3,7 @@ project(VisionX_SLAM LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if (MSVC)
     add_compile_options(/W4)
@@ -10,7 +11,6 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # find_program(CLANG_TIDY_EXE NAMES "clang-tidy" PATHS "/opt/homebrew/opt/llvm/bin")
 # if(CLANG_TIDY_EXE)
 #     message(STATUS "Clang-Tidy found: ${CLANG_TIDY_EXE}")

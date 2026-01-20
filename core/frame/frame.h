@@ -1,12 +1,11 @@
 #pragma once
 
-#include <memory>
-#include <vector>
-#include <mutex>
-
 #include <Eigen/Core>
-#include <Sophus/se3.hpp>
+#include <memory>
+#include <mutex>
 #include <opencv2/core.hpp>
+#include <sophus/se3.hpp>
+#include <vector>
 
 #include "camera/camera.h"
 
@@ -14,8 +13,8 @@ namespace visionx {
 
 struct Feature {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    Eigen::Vector2d position;   // 像素坐标
-    float response = 0.0f;      // 特征强度（ORB response 等）
+    Eigen::Vector2d position;  // 像素坐标
+    float response = 0.0f;     // 特征强度（ORB response 等）
 };
 
 class Frame {
@@ -23,9 +22,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     using Ptr = std::shared_ptr<Frame>;
 
-    Frame(uint64_t id,
-          double timestamp,
-          std::shared_ptr<Camera> camera,
+    Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera,
           const cv::Mat& image);
 
     // ===== pose =====
@@ -60,4 +57,4 @@ private:
     cv::Mat descriptors_;
 };
 
-} // namespace visionx
+}  // namespace visionx
