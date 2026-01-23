@@ -18,5 +18,7 @@ target_link_libraries(visionx_core
         glog::glog
         gflags
         fmt::fmt
+        ${Pangolin_LIBRARIES}
         ${OpenCV_LIBS}
+        # ${OPENGL_LIBRARIES}
 )

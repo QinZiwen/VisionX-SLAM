@@ -12,7 +12,6 @@
     "glog",
     "gtest",
     "gflags",
-    "fmt",
-    "pangolin"
+    "fmt"
   ]
 }
