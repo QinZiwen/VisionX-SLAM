@@ -1,5 +1,4 @@
 #include "common/logger.h"
-#include <glog/logging.h>
 
 namespace visionx {
 
@@ -9,4 +8,4 @@ void InitLogger(const char* argv) {
     FLAGS_colorlogtostderr = true;
 }
 
-}
+}  // namespace visionx

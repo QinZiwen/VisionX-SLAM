@@ -11,6 +11,7 @@ file(GLOB_RECURSE ALL_SOURCE_FILES "./*.cpp")
 target_sources(visionx_core PRIVATE ${ALL_SOURCE_FILES})
 
 target_include_directories(visionx_core PUBLIC ${PROJECT_SOURCE_DIR}/core)
+target_link_directories(visionx_core PUBLIC /opt/homebrew/opt/glew/lib/)
 target_link_libraries(visionx_core
     PUBLIC
         Eigen3::Eigen
@@ -20,5 +21,5 @@ target_link_libraries(visionx_core
         fmt::fmt
         ${Pangolin_LIBRARIES}
         ${OpenCV_LIBS}
-        # ${OPENGL_LIBRARIES}
+        glew
 )

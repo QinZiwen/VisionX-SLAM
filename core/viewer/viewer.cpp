@@ -2,13 +2,19 @@
 
 #include <unistd.h>  // usleep
 
+#include "common/logger.h"
+
 namespace visionx {
 
-Viewer::Viewer(Map::Ptr map) : map_(std::move(map)) {}
+Viewer::Viewer(bool use_thread) : use_thread_(use_thread) {}
 
 void Viewer::Start() {
     running_ = true;
-    viewer_thread_ = std::thread(&Viewer::Run, this);
+    if (use_thread_) {
+        viewer_thread_ = std::thread(&Viewer::Run, this);
+    } else {
+        DrawWindow();
+    }
 }
 
 void Viewer::Stop() {
@@ -17,12 +23,18 @@ void Viewer::Stop() {
 }
 
 void Viewer::UpdateCurrentFrame(Frame::Ptr frame) {
-    current_frame_ = std::move(frame);
+    LOG(INFO) << "UpdateCurrentFrame";
+    current_frame_ = frame;
+}
+
+void Viewer::DrawWindow() {
+    pangolin::CreateWindowAndBind("VisionX Viewer", 1024, 768);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void Viewer::Run() {
-    pangolin::CreateWindowAndBind("VisionX Viewer", 1024, 768);
-    glEnable(GL_DEPTH_TEST);
+    LOG(INFO) << "Viewer Run";
+    DrawWindow();
 
     pangolin::OpenGlRenderState s_cam(
         pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.1, 1000),
@@ -43,6 +55,27 @@ void Viewer::Run() {
         pangolin::FinishFrame();
         usleep(5000);  // ~200 FPS
     }
+}
+
+void Viewer::RunOnce() {
+    LOG(INFO) << "Viewer RunOnce";
+
+    pangolin::OpenGlRenderState s_cam(
+        pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.1, 1000),
+        pangolin::ModelViewLookAt(0, -5, -10, 0, 0, 0, 0, -1, 0));
+
+    pangolin::View& d_cam = pangolin::CreateDisplay()
+                                .SetBounds(0, 1, 0, 1, -1024.0f / 768.0f)
+                                .SetHandler(new pangolin::Handler3D(s_cam));
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    d_cam.Activate(s_cam);
+
+    DrawLandmarks();
+    DrawKeyFrames();
+    DrawCurrentCamera();
+
+    pangolin::FinishFrame();
 }
 
 void Viewer::DrawLandmarks() {

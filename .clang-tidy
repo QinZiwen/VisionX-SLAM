@@ -15,12 +15,17 @@ Checks: >
   readability-identifier-naming,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
-  -llvm-header-guard
+  -llvm-header-guard,
+  -clang-diagnostic-error,
+  -clang-diagnostic-incompatible-library-redeclaration
 
 WarningsAsErrors: ''
 
 # 只检查核心路径下的头文件（如 core/ 文件夹）
 HeaderFilterRegex: 'core/.*'
+
+AnalyzeTemporaryDtors: false
+SystemHeaders: false
 
 # 检查选项配置
 CheckOptions:

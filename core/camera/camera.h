@@ -8,6 +8,7 @@ namespace visionx {
 class Camera {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    using Ptr = std::shared_ptr<Camera>;
 
     Camera(double fx, double fy, double cx, double cy, double k1 = 0.0,
            double k2 = 0.0, double p1 = 0.0, double p2 = 0.0);
