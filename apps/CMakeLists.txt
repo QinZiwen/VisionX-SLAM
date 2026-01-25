@@ -8,5 +8,5 @@ target_link_libraries(test_pangolin PRIVATE visionx_core
 add_executable(mono_demo mono_demo.cpp)
 target_link_libraries(mono_demo PRIVATE visionx_core)
 
-add_executable(test_viewer test_viewer.cpp)
-target_link_libraries(test_viewer PRIVATE visionx_core)
+add_executable(main main.cpp)
+target_link_libraries(main PRIVATE visionx_core)

@@ -15,6 +15,7 @@ namespace visionx {
 
 class Tracking {
 public:
+    using Ptr = std::shared_ptr<Tracking>;
     using KeyFrame = Frame;
 
     enum class State { INIT = 0, TRACKING_GOOD, TRACKING_BAD, LOST };
@@ -26,8 +27,7 @@ public:
         double min_parallax = 10.0;  // 像素
     };
 
-    Tracking(const Options& options,
-             std::shared_ptr<FeatureExtractor> extractor,
+    Tracking(const Options& options, std::shared_ptr<FeatureExtractor> extractor,
              std::shared_ptr<FeatureMatcher> matcher, std::shared_ptr<Map> map);
 
     // 前端主入口
@@ -45,8 +45,7 @@ private:
 
     // ===== 核心算法 =====
     bool EstimatePoseByEssential(const Frame::Ptr& curr, const Frame::Ptr& last,
-                                 const std::vector<cv::DMatch>& matches,
-                                 int& inliers);
+                                 const std::vector<cv::DMatch>& matches, int& inliers);
 
     double ComputeParallax(const Frame::Ptr& ref, const Frame::Ptr& curr,
                            const std::vector<cv::DMatch>& matches);
@@ -55,15 +54,13 @@ private:
     void CreateKeyFrame();
 
     // ===== 三角化（暂不入 Map）=====
-    Eigen::Matrix<double, 3, 4> ProjectionMatrix(const Sophus::SE3d& T_cw,
-                                                 const Camera& cam) const;
+    Eigen::Matrix<double, 3, 4> ProjectionMatrix(const Sophus::SE3d& T_cw, const Camera& cam) const;
 
     void TriangulateWithLastKeyFrame();
 
     Eigen::Vector3d TriangulatePoint(const Eigen::Matrix<double, 3, 4>& P1,
                                      const Eigen::Matrix<double, 3, 4>& P2,
-                                     const Eigen::Vector2d& x1,
-                                     const Eigen::Vector2d& x2) const;
+                                     const Eigen::Vector2d& x1, const Eigen::Vector2d& x2) const;
 
 private:
     State state_ = State::INIT;

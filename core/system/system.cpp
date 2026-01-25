@@ -1,5 +1,6 @@
 #include "system/system.h"
 
+#include <opencv2/opencv.hpp>
 #include <thread>
 
 #include "common/logger.h"
@@ -8,16 +9,13 @@
 
 namespace visionx {
 
-System::System(const Tracking::Options& tracking_options,
-               std::shared_ptr<Camera> camera, Viewer::Ptr viewer)
+System::System(const Tracking::Options& tracking_options, Camera::Ptr camera, Viewer::Ptr viewer)
     : camera_(std::move(camera)) {
     map_ = std::make_shared<Map>();
-
     extractor_ = std::make_shared<ORBExtractor>();
     matcher_ = std::make_shared<ORBMatcher>();
 
-    tracking_ = std::make_shared<Tracking>(tracking_options, extractor_,
-                                           matcher_, map_);
+    tracking_ = std::make_shared<Tracking>(tracking_options, extractor_, matcher_, map_);
 
     if (viewer) {
         viewer_ = viewer;
@@ -27,27 +25,30 @@ System::System(const Tracking::Options& tracking_options,
     viewer_->SetMap(map_);
 }
 
-void System::run() {
-    std::thread t = std::thread([this]() {
-        const int num_frames = 50;
-
-        LOG(INFO) << "System::run ...";
-        for (int i = 0; i < num_frames; ++i) {
-            // 生成一张假的灰度图
-            cv::Mat image(480, 640, CV_8UC1, cv::Scalar(0));
-            cv::randu(image, 0, 255);
-
-            ProcessFrame(static_cast<uint64_t>(i),
-                         i * 0.1,  // timestamp
-                         image);
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    });
-
-    if (t.joinable()) {
-        t.join();
+System::~System() {
+    if (viewer_) {
+        viewer_->Stop();
     }
+
+    if (tracking_thread_.joinable()) {
+        tracking_thread_.join();
+    }
+}
+
+void System::run(Dataset::Ptr dataset) {
+    tracking_thread_ = std::thread(
+        [this](Dataset::Ptr dataset) {
+            const std::vector<ImageEntry>& images = dataset->ImageEntries();
+
+            LOG(INFO) << "System::run ...";
+            for (size_t i = 0; i < images.size(); ++i) {
+                LOG(INFO) << "Processing image " << images[i].rgb_path;
+                ProcessFrame(static_cast<uint64_t>(i), images[i].timestamp,
+                             cv::imread(images[i].rgb_path));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        },
+        dataset);
 }
 
 void System::ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image) {

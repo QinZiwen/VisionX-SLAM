@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <thread>
 
+#include "common/dataset_tum_rgbd.h"
 #include "common/logger.h"
 #include "system/system.h"
 
@@ -9,9 +10,17 @@ using namespace visionx;
 int main() {
     google::InstallFailureSignalHandler();
 
-    auto camera = std::make_shared<Camera>(520.0, 520.0,  // fx, fy
-                                           325.0, 249.0   // cx, cy
-    );
+    std::string dataset_dir = "/Users/qinziwen/Projects/VisionX-SLAM/dataset/tum_rgbd";
+    std::string sequence_name = "rgbd_dataset_freiburg1_desk";
+    Dataset::Ptr dataset = std::make_shared<DatasetTUMRGBD>(dataset_dir, sequence_name);
+
+    if (!dataset->Load()) {
+        LOG(ERROR) << "Failed to load dataset: " << dataset_dir << "/" << sequence_name;
+        return -1;
+    }
+
+    const CameraIntrinsics& d = dataset->Intrinsics();
+    auto camera = std::make_shared<Camera>(d.fx, d.fy, d.cx, d.cy, d.k1, d.k2, d.p1, d.p2);
 
     Tracking::Options options;
     options.min_matches = 20;
@@ -24,8 +33,9 @@ int main() {
 
     System system(options, camera, viewer);
     LOG(INFO) << "System Initialized";
-    system.run();
+    system.run(dataset);
 
+    LOG(INFO) << "Viewer run ...";
     while (true) {
         viewer->RunOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

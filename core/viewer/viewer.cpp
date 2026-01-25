@@ -58,8 +58,6 @@ void Viewer::Run() {
 }
 
 void Viewer::RunOnce() {
-    LOG(INFO) << "Viewer RunOnce";
-
     pangolin::OpenGlRenderState s_cam(
         pangolin::ProjectionMatrix(1024, 768, 500, 500, 512, 389, 0.1, 1000),
         pangolin::ModelViewLookAt(0, -5, -10, 0, 0, 0, 0, -1, 0));
