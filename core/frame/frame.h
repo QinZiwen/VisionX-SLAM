@@ -22,25 +22,23 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     using Ptr = std::shared_ptr<Frame>;
 
-    Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera,
-          const cv::Mat& image);
+    Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera, const cv::Mat& image);
 
-    // ===== pose =====
     Sophus::SE3d Pose() const;
     void SetPose(const Sophus::SE3d& T_cw);
 
-    // ===== basic info =====
     uint64_t Id() const { return id_; }
     double Timestamp() const { return timestamp_; }
     const cv::Mat& Image() const { return image_; }
 
-    // ===== feature =====
     std::vector<Feature>& Features() { return features_; }
     const std::vector<Feature>& Features() const { return features_; }
     cv::Mat& Descriptors() { return descriptors_; }
     const cv::Mat& Descriptors() const { return descriptors_; }
 
     std::shared_ptr<Camera> GetCamera() const { return camera_; }
+
+    Frame::Ptr Clone(bool need_feature = true) const;
 
 private:
     uint64_t id_ = 0;

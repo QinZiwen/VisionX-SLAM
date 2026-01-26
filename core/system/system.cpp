@@ -54,7 +54,8 @@ void System::run(Dataset::Ptr dataset) {
 void System::ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image) {
     auto frame = std::make_shared<Frame>(id, timestamp, camera_, image);
 
-    LOG(INFO) << "Processing frame " << id << ", timestamp " << timestamp << "";
+    LOG(INFO) << "Processing frame " << id << ", timestamp " << std::fixed << std::setprecision(6)
+              << timestamp << "";
     tracking_->ProcessFrame(frame);
 
     if (viewer_) {
