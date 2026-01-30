@@ -24,7 +24,8 @@ public:
         int min_matches = 50;
         int min_inliers = 30;
         int min_keyframe_inliers = 50;
-        double min_parallax = 10.0;  // 像素
+        double min_parallax = 10.0;     // 像素
+        double max_reproj_error = 2.0;  // 最大重投影误差（像素）
     };
 
     Tracking(const Options& options, std::shared_ptr<FeatureExtractor> extractor,
@@ -36,10 +37,11 @@ public:
     State GetState() const { return state_; }
 
 private:
-    // ===== 主流程拆分 =====
-    void InitFrame(const Frame::Ptr& frame);
+    bool InitWithFirstFrame();
+    bool InitWithSecondFrame();
     bool Track();
     bool TrackLastFrame();
+    bool TrackWithPnP();
     void UpdateTrackingState();
     void HandleTrackingFailure();
 
@@ -56,7 +58,7 @@ private:
     // ===== 三角化（暂不入 Map）=====
     Eigen::Matrix<double, 3, 4> ProjectionMatrix(const Sophus::SE3d& T_cw, const Camera& cam) const;
 
-    void TriangulateWithLastKeyFrame();
+    void TriangulateWithLastKeyFrame(Frame::Ptr last_frame, Frame::Ptr curr_frame);
 
     Eigen::Vector3d TriangulatePoint(const Eigen::Matrix<double, 3, 4>& P1,
                                      const Eigen::Matrix<double, 3, 4>& P2,
@@ -66,6 +68,7 @@ private:
     State state_ = State::INIT;
     Options options_;
 
+    Frame::Ptr init_frame_;
     Frame::Ptr current_frame_;
     Frame::Ptr last_frame_;
     Frame::Ptr last_keyframe_;

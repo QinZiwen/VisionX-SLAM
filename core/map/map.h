@@ -17,8 +17,11 @@ public:
     void InsertKeyFrame(Frame::Ptr frame);
     void InsertLandmark(Landmark::Ptr landmark);
 
+    Frame::Ptr GetFrame(uint64_t id) const;
     const std::map<uint64_t, Frame::Ptr>& KeyFrames() const { return keyframes_; }
 
+    size_t LandmarkSize() const;
+    Landmark::Ptr GetLandmark(uint64_t id) const;
     const std::unordered_map<uint64_t, Landmark::Ptr>& Landmarks() const { return landmarks_; }
 
 private:

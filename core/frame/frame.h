@@ -11,10 +11,13 @@
 
 namespace visionx {
 
+class Landmark;
+
 struct Feature {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    Eigen::Vector2d position;  // 像素坐标
-    float response = 0.0f;     // 特征强度（ORB response 等）
+    Eigen::Vector2d position;   // 像素坐标
+    float response = 0.0f;      // 特征强度（ORB response 等）
+    uint64_t landmark_id_ = 0;  // 关联的路标点 ID
 };
 
 class Frame {

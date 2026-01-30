@@ -29,7 +29,7 @@ void Viewer::Stop() {
 
 void Viewer::UpdateCurrentFrame(Frame::Ptr frame) {
     if (!frame) return;
-    current_frame_ = frame->Clone(false);
+    current_frame_ = frame;
 }
 
 /* =========================
