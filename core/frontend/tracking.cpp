@@ -86,7 +86,6 @@ bool Tracking::InitWithSecondFrame() {
     map_->InsertKeyFrame(current_frame_);
 
     last_parallax_ = ComputeParallax(init_frame_, current_frame_, matches);
-    last_frame_ = current_frame_;
     last_inliers_ = inliers;
     LOG(INFO) << "[InitWithSecondFrame] Parallax: " << last_parallax_ << ", inliers: " << inliers;
     return true;
@@ -94,7 +93,19 @@ bool Tracking::InitWithSecondFrame() {
 
 // ================= Tracking 主逻辑 =================
 
-bool Tracking::Track() { return TrackWithPnP(); }
+bool Tracking::Track() {
+    // 如果last_keyframe_存在，尝试使用PnP（更准确）
+    if (last_keyframe_) {
+        bool pnp_ok = TrackWithPnP();
+        if (pnp_ok) {
+            return true;
+        }
+        // PnP失败，回退到TrackLastFrame
+        LOG(INFO) << "[Track] PnP failed, falling back to TrackLastFrame.";
+    }
+    // 使用TrackLastFrame（基于本质矩阵）
+    return TrackLastFrame();
+}
 
 bool Tracking::TrackLastFrame() {
     if (!last_frame_) {
@@ -119,11 +130,11 @@ bool Tracking::TrackLastFrame() {
 }
 
 bool Tracking::TrackWithPnP() {
-    if (!last_frame_) return false;
+    if (!last_keyframe_) return false;
 
-    // === 1. 特征匹配（last frame ↔ current frame）===
+    // === 1. 特征匹配（last keyframe ↔ current frame）===
     std::vector<cv::DMatch> matches;
-    matcher_->Match(last_frame_, current_frame_, matches);
+    matcher_->Match(last_keyframe_, current_frame_, matches);
 
     if (matches.size() < static_cast<size_t>(options_.min_matches)) {
         LOG(WARNING) << "[TrackWithPnP] Not enough matches. Matches: " << matches.size()
@@ -136,11 +147,11 @@ bool Tracking::TrackWithPnP() {
     std::vector<cv::Point3f> pts_3d;
     std::vector<cv::Point2f> pts_2d;
 
-    const auto& feats_last = last_frame_->Features();
+    const auto& feats_last = last_keyframe_->Features();
     const auto& feats_curr = current_frame_->Features();
 
     for (const auto& m : matches) {
-        // 你需要从 last_frame_ 找到对应的 Landmark
+        // 从 last_keyframe_ 找到对应的 Landmark
         Landmark::Ptr lm = map_->GetLandmark(feats_last[m.queryIdx].landmark_id_);
         if (!lm) {
             continue;
@@ -154,10 +165,11 @@ bool Tracking::TrackWithPnP() {
     }
 
     if (pts_3d.size() < static_cast<size_t>(options_.min_inliers)) {
-        LOG(WARNING) << "[PnP] Not enough 3D-2D correspondences. 3D-2D pairs: " << pts_3d.size()
-                     << ", min_inliers: " << options_.min_inliers;
+        LOG(WARNING) << "[TrackWithPnP] Not enough 3D-2D correspondences. 3D-2D pairs: "
+                     << pts_3d.size() << ", min_inliers: " << options_.min_inliers;
         return false;
     }
+    LOG(INFO) << "[TrackWithPnP] 3D-2D pairs: " << pts_3d.size();
 
     // === 3. PnP RANSAC ===
     const auto cam = current_frame_->GetCamera();
@@ -187,7 +199,10 @@ bool Tracking::TrackWithPnP() {
     Sophus::SE3d T_cw(R_eigen, t_eigen);
     current_frame_->SetPose(T_cw);
 
-    LOG(INFO) << "[PnP] Inliers: " << inliers.rows;
+    last_parallax_ = ComputeParallax(last_keyframe_, current_frame_, matches);
+    last_inliers_ = inliers.rows;
+
+    LOG(INFO) << "[TrackWithPnP] Inliers: " << inliers.rows;
     return true;
 }
 
