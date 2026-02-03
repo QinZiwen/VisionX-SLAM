@@ -38,11 +38,13 @@ private:
     void DrawKeyFrames();
     void DrawCurrentCamera();
     void DrawCamera(const Sophus::SE3d& T_wc, float r, float g, float b);
+    void DrawCurrentImage();
 
 private:
     bool initialized_ = false;
     std::unique_ptr<pangolin::OpenGlRenderState> s_cam_;
     pangolin::View* d_cam_ = nullptr;
+    pangolin::View* d_image_ = nullptr;
 
     std::unique_ptr<pangolin::Var<std::string>> ui_lm_;
     std::unique_ptr<pangolin::Var<std::string>> ui_kf_;

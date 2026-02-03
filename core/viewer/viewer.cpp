@@ -6,6 +6,8 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "common/logger.h"
 
@@ -56,6 +58,9 @@ void Viewer::InitPangolin() {
     ui_kf_ = std::make_unique<pangolin::Var<std::string>>("ui.KeyFrames", "0");
     ui_lm_ = std::make_unique<pangolin::Var<std::string>>("ui.Landmarks", "0");
 
+    // ===== 图像显示 (右下角) =====
+    d_image_ = &pangolin::CreateDisplay().SetBounds(0.0, 0.3, 0.7, 1.0, 640.0f / 480.0f);
+
     last_fps_time_ = std::chrono::steady_clock::now();
     frame_cnt_ = 0;
 
@@ -72,6 +77,12 @@ void Viewer::DrawFrame() {
     DrawLandmarks();
     DrawKeyFrames();
     DrawCurrentCamera();
+
+    // 绘制当前图像
+    if (d_image_) {
+        d_image_->Activate();
+        DrawCurrentImage();
+    }
 
     pangolin::FinishFrame();
 
@@ -90,6 +101,43 @@ void Viewer::DrawFrame() {
         frame_cnt_ = 0;
         last_fps_time_ = now;
     }
+}
+
+void Viewer::DrawCurrentImage() {
+    if (!current_frame_) return;
+
+    // 获取当前帧图像
+    cv::Mat image = current_frame_->Image();
+    if (image.empty()) return;
+
+    // 复制图像并绘制特征点
+    cv::Mat display = image.clone();
+    const auto& features = current_frame_->Features();
+
+    // 绘制特征点
+    for (const auto& feat : features) {
+        cv::circle(display, cv::Point2f(feat.position.x(), feat.position.y()), 2,
+                   cv::Scalar(0, 255, 0), -1);
+    }
+
+    // 转换为RGB格式（如果是灰度图）
+    if (display.channels() == 1) {
+        cv::cvtColor(display, display, cv::COLOR_GRAY2RGB);
+    } else if (display.channels() == 3) {
+        cv::cvtColor(display, display, cv::COLOR_BGR2RGB);
+    }
+
+    // 翻转图像以匹配OpenGL坐标系
+    cv::flip(display, display, 0);
+
+    // 创建纹理
+    static pangolin::GlTexture texture(display.cols, display.rows, GL_RGB, false, 0, GL_RGB,
+                                       GL_UNSIGNED_BYTE);
+    texture.Upload(display.data, GL_RGB, GL_UNSIGNED_BYTE);
+
+    // 显示纹理
+    glColor3f(1.0f, 1.0f, 1.0f);
+    texture.RenderToViewport();
 }
 
 /* =========================

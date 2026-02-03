@@ -64,6 +64,11 @@ private:
                                      const Eigen::Matrix<double, 3, 4>& P2,
                                      const Eigen::Vector2d& x1, const Eigen::Vector2d& x2) const;
 
+    bool CheckFeatureDistribution(const std::vector<Feature>& features, int width,
+                                  int height) const;
+    bool CheckImageQuality(const cv::Mat& image) const;
+    void VisualizeFeatures(Frame::Ptr frame) const;
+
 private:
     State state_ = State::INIT;
     Options options_;

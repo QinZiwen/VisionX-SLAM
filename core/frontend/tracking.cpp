@@ -4,6 +4,8 @@
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/eigen.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace visionx {
 
@@ -25,7 +27,10 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
 
     if (state_ == State::INIT) {
         if (!init_frame_) {
-            InitWithFirstFrame();
+            if (!InitWithFirstFrame()) {
+                LOG(INFO) << "[ProcessFrame] Waiting for a better initial frame...";
+                return;  // 继续等待更好的第一帧
+            }
         } else {
             if (InitWithSecondFrame()) {
                 UpdateTrackingState();
@@ -50,7 +55,109 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
 
 // ================= 初始化 =================
 
+bool Tracking::CheckFeatureDistribution(const std::vector<Feature>& features, int width,
+                                        int height) const {
+    // 划分网格，检查每个网格是否有特征点
+    const int grid_cols = 5;
+    const int grid_rows = 5;
+    std::vector<std::vector<bool>> grid(grid_cols, std::vector<bool>(grid_rows, false));
+
+    for (const auto& feat : features) {
+        int col = static_cast<int>((feat.position.x() / width) * grid_cols);
+        int row = static_cast<int>((feat.position.y() / height) * grid_rows);
+        col = std::clamp(col, 0, grid_cols - 1);
+        row = std::clamp(row, 0, grid_rows - 1);
+        grid[col][row] = true;
+    }
+
+    // 计算有效网格数
+    int valid_grids = 0;
+    for (int i = 0; i < grid_cols; i++) {
+        for (int j = 0; j < grid_rows; j++) {
+            if (grid[i][j]) valid_grids++;
+        }
+    }
+
+    // 要求至少70%的网格有特征点
+    return valid_grids >= (grid_cols * grid_rows * 0.7);
+}
+
+bool Tracking::CheckImageQuality(const cv::Mat& image) const {
+    // 计算图像亮度
+    cv::Scalar mean, stddev;
+    cv::meanStdDev(image, mean, stddev);
+
+    // 亮度范围检查（0-255）
+    if (mean[0] < 30 || mean[0] > 225) {
+        return false;
+    }
+
+    // 对比度检查
+    if (stddev[0] < 20) {
+        return false;
+    }
+
+    return true;
+}
+
+void Tracking::VisualizeFeatures(Frame::Ptr frame) const {
+    if (!frame) {
+        LOG(WARNING) << "[VisualizeFeatures] Empty frame.";
+        return;
+    }
+
+    // 复制图像用于显示
+    cv::Mat display = frame->Image().clone();
+    const auto& features = frame->Features();
+
+    // 绘制特征点
+    for (const auto& feat : features) {
+        cv::circle(display, cv::Point2f(feat.position.x(), feat.position.y()), 2,
+                   cv::Scalar(0, 255, 0), -1);
+    }
+
+    // 创建窗口并显示
+    std::string window_name = "Frame Features: " + std::to_string(frame->Id());
+    cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+    cv::resizeWindow(window_name, 800, 600);
+    cv::imshow(window_name, display);
+
+    LOG(INFO) << "[VisualizeFeatures] Press 'q' to close the window and continue...";
+
+    // 等待用户按q键
+    while (true) {
+        char key = cv::waitKey(10);
+        if (key == 'q' || key == 'Q') {
+            break;
+        }
+    }
+
+    // 关闭窗口
+    cv::destroyWindow(window_name);
+}
+
 bool Tracking::InitWithFirstFrame() {
+    // 1. 检查特征点数量
+    if (current_frame_->Features().size() < static_cast<size_t>(options_.min_matches)) {
+        LOG(WARNING) << "[InitWithFirstFrame] Not enough features. Features: "
+                     << current_frame_->Features().size()
+                     << ", min_matches: " << options_.min_matches;
+        return false;
+    }
+
+    // 2. 检查特征分布
+    if (!CheckFeatureDistribution(current_frame_->Features(), current_frame_->Image().cols,
+                                  current_frame_->Image().rows)) {
+        LOG(WARNING) << "[InitWithFirstFrame] Poor feature distribution.";
+        return false;
+    }
+
+    // 3. 检查图像质量
+    if (!CheckImageQuality(current_frame_->Image())) {
+        LOG(WARNING) << "[InitWithFirstFrame] Poor image quality (brightness/contrast).";
+        return false;
+    }
+
     init_frame_ = current_frame_;
     init_frame_->SetPose(Sophus::SE3d());
 
