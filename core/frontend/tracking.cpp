@@ -37,11 +37,16 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
                 LOG(INFO) << "[Tracking] Initialization success.";
             }
         }
+    } else if (state_ == State::TRACKING_GOOD) {
+        if (!Track()) {
+            HandleTrackingFailure();
+            return;
+        }
+    } else if (state_ == State::TRACKING_BAD) {
+        HandleTrackingBad();
         return;
-    }
-
-    if (!Track()) {
-        HandleTrackingFailure();
+    } else if (state_ == State::LOST) {
+        HandleTrackingLost();
         return;
     }
 
@@ -83,9 +88,12 @@ bool Tracking::CheckFeatureDistribution(const std::vector<Feature>& features, in
 }
 
 bool Tracking::CheckImageQuality(const cv::Mat& image) const {
+    cv::Mat grayImage;
+    cv::cvtColor(image, grayImage, cv::COLOR_BGR2GRAY);
+
     // 计算图像亮度
     cv::Scalar mean, stddev;
-    cv::meanStdDev(image, mean, stddev);
+    cv::meanStdDev(grayImage, mean, stddev);
 
     // 亮度范围检查（0-255）
     if (mean[0] < 30 || mean[0] > 225) {
@@ -169,6 +177,20 @@ bool Tracking::InitWithSecondFrame() {
     std::vector<cv::DMatch> matches;
     matcher_->Match(init_frame_, current_frame_, matches);
 
+    // 添加匹配质量过滤
+    std::vector<cv::DMatch> good_matches;
+    float max_dist = 0.0, min_dist = 100.0;
+    for (const auto& match : matches) {
+        if (match.distance < min_dist) min_dist = match.distance;
+        if (match.distance > max_dist) max_dist = match.distance;
+    }
+    for (const auto& match : matches) {
+        if (match.distance <= std::max(2 * min_dist, 30.0f)) {
+            good_matches.push_back(match);
+        }
+    }
+    matches.swap(good_matches);
+
     if (matches.size() < static_cast<size_t>(options_.min_matches)) {
         LOG(WARNING) << "[InitWithSecondFrame] Not enough matches. Matches: " << matches.size()
                      << ", min_matches: " << options_.min_matches;
@@ -185,6 +207,13 @@ bool Tracking::InitWithSecondFrame() {
         return false;
     }
 
+    float parallax = ComputeParallax(init_frame_, current_frame_, matches);
+    float min_parallax = 1.0f * M_PI / 180.0f;  // 1 度
+    if (parallax < min_parallax) {
+        LOG(WARNING) << "[InitWithSecondFrame] Parallax too small: " << parallax;
+        return false;
+    }
+
     // === 三角化第一批地图点 ===
     TriangulateWithLastKeyFrame(init_frame_, current_frame_);
 
@@ -192,7 +221,7 @@ bool Tracking::InitWithSecondFrame() {
     map_->InsertKeyFrame(init_frame_);
     map_->InsertKeyFrame(current_frame_);
 
-    last_parallax_ = ComputeParallax(init_frame_, current_frame_, matches);
+    last_parallax_ = parallax;
     last_inliers_ = inliers;
     LOG(INFO) << "[InitWithSecondFrame] Parallax: " << last_parallax_ << ", inliers: " << inliers;
     return true;
@@ -216,32 +245,80 @@ bool Tracking::Track() {
 
 bool Tracking::TrackLastFrame() {
     if (!last_frame_) {
+        LOG(WARNING) << "[TrackLastFrame] last_frame_ is null";
         return false;
     }
 
     std::vector<cv::DMatch> matches;
+    matches.reserve(1000);  // 预分配内存
     matcher_->Match(last_frame_, current_frame_, matches);
 
-    if (matches.size() < static_cast<size_t>(options_.min_matches)) {
-        return false;
+    // 1. 匹配质量过滤
+    std::vector<cv::DMatch> good_matches;
+    if (!matches.empty()) {
+        float min_dist = 100.0f;
+        for (const auto& match : matches) {
+            if (match.distance < min_dist) min_dist = match.distance;
+        }
+        for (const auto& match : matches) {
+            if (match.distance <= std::max(2 * min_dist, 30.0f)) {
+                good_matches.push_back(match);
+            }
+        }
+        matches.swap(good_matches);
     }
 
+    if (matches.size() < static_cast<size_t>(options_.min_matches)) {
+        LOG(WARNING) << "[TrackLastFrame] Not enough matches. Matches: " << matches.size()
+                     << ", min_matches: " << options_.min_matches;
+        return false;
+    }
+    LOG(INFO) << "[TrackLastFrame] Matches: " << matches.size();
+
+    // 2. 姿态估计
     int inliers = 0;
     bool success = EstimatePoseByEssential(current_frame_, last_frame_, matches, inliers);
 
+    if (!success || inliers < static_cast<int>(options_.min_inliers)) {
+        LOG(WARNING) << "[TrackLastFrame] Pose estimation failed. success: " << success
+                     << ", inliers: " << inliers << ", min_inliers: " << options_.min_inliers;
+        return false;
+    }
+
+    // 3. 计算视差
     last_inliers_ = inliers;
     last_parallax_ =
         ComputeParallax(last_keyframe_ ? last_keyframe_ : last_frame_, current_frame_, matches);
+    LOG(INFO) << "[TrackLastFrame] Success. Inliers: " << inliers
+              << ", Parallax: " << last_parallax_;
 
-    return success && inliers >= options_.min_inliers;
+    return true;
 }
 
 bool Tracking::TrackWithPnP() {
-    if (!last_keyframe_) return false;
+    if (!last_keyframe_) {
+        LOG(WARNING) << "[TrackWithPnP] last_keyframe_ is null";
+        return false;
+    }
 
     // === 1. 特征匹配（last keyframe ↔ current frame）===
     std::vector<cv::DMatch> matches;
     matcher_->Match(last_keyframe_, current_frame_, matches);
+
+    // 匹配质量过滤
+    std::vector<cv::DMatch> good_matches;
+    if (!matches.empty()) {
+        float min_dist = 100.0f;
+        for (const auto& match : matches) {
+            if (match.distance < min_dist) min_dist = match.distance;
+        }
+        for (const auto& match : matches) {
+            if (match.distance <= std::max(2 * min_dist, 30.0f)) {
+                good_matches.push_back(match);
+            }
+        }
+        matches.swap(good_matches);
+    }
 
     if (matches.size() < static_cast<size_t>(options_.min_matches)) {
         LOG(WARNING) << "[TrackWithPnP] Not enough matches. Matches: " << matches.size()
@@ -253,6 +330,8 @@ bool Tracking::TrackWithPnP() {
     // === 2. 构建 3D–2D 对 ===
     std::vector<cv::Point3f> pts_3d;
     std::vector<cv::Point2f> pts_2d;
+    pts_3d.reserve(matches.size());  // 预分配内存
+    pts_2d.reserve(matches.size());
 
     const auto& feats_last = last_keyframe_->Features();
     const auto& feats_curr = current_frame_->Features();
@@ -265,6 +344,14 @@ bool Tracking::TrackWithPnP() {
         }
 
         const auto& p = lm->Position();
+        // 检查 3D 点是否有效（避免无穷远点或异常值）
+        if (std::isnan(p.x()) || std::isnan(p.y()) || std::isnan(p.z())) {
+            continue;
+        }
+        if (std::abs(p.x()) > 1000 || std::abs(p.y()) > 1000 || std::abs(p.z()) > 1000) {
+            continue;
+        }
+
         pts_3d.emplace_back(p.x(), p.y(), p.z());
 
         const auto& px = feats_curr[m.trainIdx].position;
@@ -280,12 +367,18 @@ bool Tracking::TrackWithPnP() {
 
     // === 3. PnP RANSAC ===
     const auto cam = current_frame_->GetCamera();
+    if (!cam) {
+        LOG(ERROR) << "[TrackWithPnP] Camera is null";
+        return false;
+    }
 
     cv::Mat K =
         (cv::Mat_<double>(3, 3) << cam->fx(), 0, cam->cx(), 0, cam->fy(), cam->cy(), 0, 0, 1);
 
     cv::Mat rvec, tvec, inliers;
-    bool ok = cv::solvePnPRansac(pts_3d, pts_2d, K, cv::Mat(), rvec, tvec, false, 100,
+    // 动态调整 RANSAC 参数
+    int max_iterations = std::min(100, static_cast<int>(pts_3d.size() * 2));
+    bool ok = cv::solvePnPRansac(pts_3d, pts_2d, K, cv::Mat(), rvec, tvec, false, max_iterations,
                                  options_.max_reproj_error, 0.99, inliers);
 
     if (!ok || inliers.rows < options_.min_inliers) {
@@ -303,13 +396,20 @@ bool Tracking::TrackWithPnP() {
     cv::cv2eigen(R, R_eigen);
     cv::cv2eigen(tvec, t_eigen);
 
+    // 检查旋转矩阵是否有效
+    if (std::isnan(R_eigen.norm()) || std::isinf(R_eigen.norm())) {
+        LOG(WARNING) << "[TrackWithPnP] Invalid rotation matrix";
+        return false;
+    }
+
     Sophus::SE3d T_cw(R_eigen, t_eigen);
     current_frame_->SetPose(T_cw);
 
     last_parallax_ = ComputeParallax(last_keyframe_, current_frame_, matches);
     last_inliers_ = inliers.rows;
 
-    LOG(INFO) << "[TrackWithPnP] Inliers: " << inliers.rows;
+    LOG(INFO) << "[TrackWithPnP] Success. Inliers: " << inliers.rows
+              << ", Parallax: " << last_parallax_;
     return true;
 }
 
@@ -331,6 +431,20 @@ void Tracking::HandleTrackingFailure() {
     }
 
     LOG(WARNING) << "[Tracking] Tracking failure, state = " << static_cast<int>(state_);
+}
+
+void Tracking::HandleTrackingBad() {
+    // TODO(qinziwen): 目前线尝试重新初始化
+    state_ = State::INIT;
+    map_->removeAll();
+    LOG(INFO) << "[ProcessFrame] Tracking bad. Trying to re-initialize...";
+}
+
+void Tracking::HandleTrackingLost() {
+    // TODO(qinziwen): 目前线尝试重新初始化
+    state_ = State::INIT;
+    map_->removeAll();
+    LOG(INFO) << "[ProcessFrame] Tracking lost. Trying to re-initialize...";
 }
 
 // ================= 位姿估计 =================

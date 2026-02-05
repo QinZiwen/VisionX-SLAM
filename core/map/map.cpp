@@ -12,6 +12,12 @@ void Map::InsertLandmark(Landmark::Ptr landmark) {
     landmarks_[landmark->Id()] = landmark;
 }
 
+void Map::removeAll() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    keyframes_.clear();
+    landmarks_.clear();
+}
+
 Frame::Ptr Map::GetFrame(uint64_t id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = keyframes_.find(id);

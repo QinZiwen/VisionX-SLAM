@@ -44,6 +44,8 @@ private:
     bool TrackWithPnP();
     void UpdateTrackingState();
     void HandleTrackingFailure();
+    void HandleTrackingBad();
+    void HandleTrackingLost();
 
     // ===== 核心算法 =====
     bool EstimatePoseByEssential(const Frame::Ptr& curr, const Frame::Ptr& last,
