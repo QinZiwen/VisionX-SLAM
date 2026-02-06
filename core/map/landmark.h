@@ -34,8 +34,28 @@ public:
         observations_[keyframe_id] = feature_idx;
     }
 
+    void RemoveObservation(uint64_t keyframe_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        observations_.erase(keyframe_id);
+    }
+
+    size_t ObservationCount() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return observations_.size();
+    }
+
     const std::unordered_map<uint64_t, size_t>& Observations() const {
         return observations_;
+    }
+
+    bool IsBad() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return is_bad_;
+    }
+
+    void SetBad(bool bad = true) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        is_bad_ = bad;
     }
 
 private:
@@ -44,6 +64,7 @@ private:
 
     std::unordered_map<uint64_t, size_t> observations_;
     mutable std::mutex mutex_;
+    bool is_bad_ = false;
 };
 
 }  // namespace visionx

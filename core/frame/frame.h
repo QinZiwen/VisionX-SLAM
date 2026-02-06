@@ -18,6 +18,8 @@ struct Feature {
     Eigen::Vector2d position;   // 像素坐标
     float response = 0.0f;      // 特征强度（ORB response 等）
     uint64_t landmark_id_ = 0;  // 关联的路标点 ID
+    bool has_landmark = false;  // 是否已关联路标点
+    bool is_outlier = false;    // 是否被判定为外点
 };
 
 class Frame {
@@ -25,7 +27,8 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     using Ptr = std::shared_ptr<Frame>;
 
-    Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera, const cv::Mat& image);
+    Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera, const cv::Mat& image,
+          const cv::Mat& depth = cv::Mat());
 
     Sophus::SE3d Pose() const;
     void SetPose(const Sophus::SE3d& T_cw);
@@ -33,6 +36,7 @@ public:
     uint64_t Id() const { return id_; }
     double Timestamp() const { return timestamp_; }
     const cv::Mat& Image() const { return image_; }
+    const cv::Mat& Depth() const { return depth_; }
 
     std::vector<Feature>& Features() { return features_; }
     const std::vector<Feature>& Features() const { return features_; }
@@ -53,6 +57,7 @@ private:
 
     std::shared_ptr<Camera> camera_;
     cv::Mat image_;
+    cv::Mat depth_;
 
     std::vector<Feature> features_;
     cv::Mat descriptors_;

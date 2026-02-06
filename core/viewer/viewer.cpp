@@ -171,7 +171,7 @@ void Viewer::DrawLandmarks() {
     constexpr int kStride = 5;  // 降采样
     int cnt = 0;
 
-    glPointSize(2.0f);
+    glPointSize(2.5f);
     glBegin(GL_POINTS);
     glColor3f(1.f, 1.f, 1.f);  // 白色
 
@@ -240,9 +240,9 @@ void Viewer::DrawCamera(const Sophus::SE3d& T_wc, float r, float g, float b) {
     glPushMatrix();
     glMultMatrixd(Twc.data());
 
-    const float w = 0.3f;
-    const float h = 0.2f;
-    const float z = 0.6f;
+    const float w = 0.12f;
+    const float h = 0.08f;
+    const float z = 0.35f;
 
     glLineWidth(2.0f);
     glColor3f(r, g, b);

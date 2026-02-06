@@ -2,10 +2,15 @@
 
 #include <glog/logging.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+
+#include "common/projection.h"
 
 namespace visionx {
 
@@ -16,7 +21,18 @@ Tracking::Tracking(const Options& options, std::shared_ptr<FeatureExtractor> ext
     : options_(options),
       extractor_(std::move(extractor)),
       matcher_(std::move(matcher)),
-      map_(std::move(map)) {}
+      map_(std::move(map)) {
+    if (options_.enable_local_ba) {
+        LocalBA::Options ba_options;
+        ba_options.window_size = options_.ba_window_size;
+        ba_options.max_iterations = options_.ba_iterations;
+        ba_options.min_pose_observations = options_.ba_min_pose_observations;
+        ba_options.min_point_observations = options_.ba_min_point_observations;
+        ba_options.huber_delta = options_.ba_huber_delta;
+        ba_options.max_reproj_error = options_.ba_max_reproj_error;
+        local_ba_ = std::make_unique<LocalBA>(ba_options);
+    }
+}
 
 // ================= 主入口 =================
 
@@ -24,6 +40,7 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
     current_frame_ = frame;
 
     extractor_->Extract(*current_frame_);
+    bool just_initialized = false;
 
     if (state_ == State::INIT) {
         if (!init_frame_) {
@@ -31,11 +48,17 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
                 LOG(INFO) << "[ProcessFrame] Waiting for a better initial frame...";
                 return;  // 继续等待更好的第一帧
             }
+            // 还未完成初始化（需要第二帧）
+            return;
         } else {
-            if (InitWithSecondFrame()) {
-                UpdateTrackingState();
-                LOG(INFO) << "[Tracking] Initialization success.";
+            if (!InitWithSecondFrame()) {
+                LOG(INFO) << "[ProcessFrame] Waiting for a better second frame...";
+                return;
             }
+            UpdateTrackingState();
+            LOG(INFO) << "[Tracking] Initialization success.";
+            last_frame_ = current_frame_;
+            just_initialized = true;
         }
     } else if (state_ == State::TRACKING_GOOD) {
         if (!Track()) {
@@ -50,8 +73,15 @@ void Tracking::ProcessFrame(Frame::Ptr frame) {
         return;
     }
 
-    if (NeedNewKeyFrame()) {
+    if (!just_initialized && NeedNewKeyFrame()) {
         CreateKeyFrame();
+        if (options_.enable_culling) {
+            CullLandmarks();
+            CullKeyFrames();
+        }
+        if (local_ba_) {
+            local_ba_->Optimize(map_, last_keyframe_);
+        }
     }
 
     UpdateTrackingState();
@@ -83,8 +113,8 @@ bool Tracking::CheckFeatureDistribution(const std::vector<Feature>& features, in
         }
     }
 
-    // 要求至少70%的网格有特征点
-    return valid_grids >= (grid_cols * grid_rows * 0.7);
+    // 要求至少50%的网格有特征点
+    return valid_grids >= (grid_cols * grid_rows * 0.5);
 }
 
 bool Tracking::CheckImageQuality(const cv::Mat& image) const {
@@ -214,12 +244,17 @@ bool Tracking::InitWithSecondFrame() {
         return false;
     }
 
+    // === 深度辅助创建地图点 ===
+    CreateLandmarksFromDepth(init_frame_);
+    CreateLandmarksFromDepth(current_frame_);
+
     // === 三角化第一批地图点 ===
     TriangulateWithLastKeyFrame(init_frame_, current_frame_);
 
     // === 放进 Map ===
     map_->InsertKeyFrame(init_frame_);
     map_->InsertKeyFrame(current_frame_);
+    last_keyframe_ = current_frame_;
 
     last_parallax_ = parallax;
     last_inliers_ = inliers;
@@ -287,8 +322,7 @@ bool Tracking::TrackLastFrame() {
 
     // 3. 计算视差
     last_inliers_ = inliers;
-    last_parallax_ =
-        ComputeParallax(last_keyframe_ ? last_keyframe_ : last_frame_, current_frame_, matches);
+    last_parallax_ = ComputeParallax(last_frame_, current_frame_, matches);
     LOG(INFO) << "[TrackLastFrame] Success. Inliers: " << inliers
               << ", Parallax: " << last_parallax_;
 
@@ -338,8 +372,15 @@ bool Tracking::TrackWithPnP() {
 
     for (const auto& m : matches) {
         // 从 last_keyframe_ 找到对应的 Landmark
-        Landmark::Ptr lm = map_->GetLandmark(feats_last[m.queryIdx].landmark_id_);
+        const auto& feat_last = feats_last[m.queryIdx];
+        if (!feat_last.has_landmark || feat_last.is_outlier) {
+            continue;
+        }
+        Landmark::Ptr lm = map_->GetLandmark(feat_last.landmark_id_);
         if (!lm) {
+            continue;
+        }
+        if (lm->IsBad()) {
             continue;
         }
 
@@ -416,7 +457,7 @@ bool Tracking::TrackWithPnP() {
 // ================= 状态管理 =================
 
 void Tracking::UpdateTrackingState() {
-    if (last_inliers_ >= options_.min_inliers * 2) {
+    if (last_inliers_ >= options_.min_inliers) {
         state_ = State::TRACKING_GOOD;
     } else {
         state_ = State::TRACKING_BAD;
@@ -437,6 +478,11 @@ void Tracking::HandleTrackingBad() {
     // TODO(qinziwen): 目前线尝试重新初始化
     state_ = State::INIT;
     map_->removeAll();
+    init_frame_.reset();
+    last_frame_.reset();
+    last_keyframe_.reset();
+    last_inliers_ = 0;
+    last_parallax_ = 0.0;
     LOG(INFO) << "[ProcessFrame] Tracking bad. Trying to re-initialize...";
 }
 
@@ -444,6 +490,11 @@ void Tracking::HandleTrackingLost() {
     // TODO(qinziwen): 目前线尝试重新初始化
     state_ = State::INIT;
     map_->removeAll();
+    init_frame_.reset();
+    last_frame_.reset();
+    last_keyframe_.reset();
+    last_inliers_ = 0;
+    last_parallax_ = 0.0;
     LOG(INFO) << "[ProcessFrame] Tracking lost. Trying to re-initialize...";
 }
 
@@ -510,20 +561,282 @@ double Tracking::ComputeParallax(const Frame::Ptr& ref, const Frame::Ptr& curr,
 
 bool Tracking::NeedNewKeyFrame() const {
     if (state_ != State::TRACKING_GOOD) return false;
+    if (!current_frame_ || !last_keyframe_) return false;
 
     if (last_inliers_ < options_.min_keyframe_inliers) return false;
 
     if (last_parallax_ < options_.min_parallax) return false;
 
+    if (current_frame_->Id() - last_keyframe_->Id() < static_cast<uint64_t>(options_.min_keyframe_gap)) {
+        return false;
+    }
+
     return true;
 }
 
 void Tracking::CreateKeyFrame() {
+    CreateLandmarksFromDepth(current_frame_);
     TriangulateWithLastKeyFrame(last_keyframe_, current_frame_);
     last_keyframe_ = current_frame_;
     map_->InsertKeyFrame(current_frame_);
 
     LOG(INFO) << "[Tracking] New keyframe created.";
+}
+
+void Tracking::CreateLandmarksFromDepth(const Frame::Ptr& frame) {
+    if (!map_ || !frame) {
+        return;
+    }
+
+    const cv::Mat& depth = frame->Depth();
+    if (depth.empty()) {
+        return;
+    }
+
+    const auto cam = frame->GetCamera();
+    if (!cam) {
+        return;
+    }
+
+    const int rows = depth.rows;
+    const int cols = depth.cols;
+    const double kDepthScale = 5000.0;  // TUM RGB-D depth scale
+    const double kMinDepth = 0.1;
+    const double kMaxDepth = 10.0;
+
+    auto& features = frame->Features();
+    for (size_t i = 0; i < features.size(); ++i) {
+        auto& feat = features[i];
+        if (feat.has_landmark) {
+            continue;
+        }
+
+        const int u = static_cast<int>(feat.position.x() + 0.5);
+        const int v = static_cast<int>(feat.position.y() + 0.5);
+        if (u < 0 || u >= cols || v < 0 || v >= rows) {
+            continue;
+        }
+
+        double depth_m = 0.0;
+        if (depth.type() == CV_16U) {
+            uint16_t d = depth.at<uint16_t>(v, u);
+            if (d == 0) {
+                continue;
+            }
+            depth_m = static_cast<double>(d) / kDepthScale;
+        } else if (depth.type() == CV_32F) {
+            depth_m = static_cast<double>(depth.at<float>(v, u));
+        } else if (depth.type() == CV_64F) {
+            depth_m = depth.at<double>(v, u);
+        } else {
+            continue;
+        }
+
+        if (depth_m < kMinDepth || depth_m > kMaxDepth) {
+            continue;
+        }
+
+        Eigen::Vector3d pc = cam->pixelToCamera(feat.position, depth_m);
+        Eigen::Vector3d pw = frame->Pose().inverse() * pc;
+
+        auto lm = std::make_shared<Landmark>(landmark_id_++, pw);
+        lm->AddObservation(frame->Id(), i);
+        map_->InsertLandmark(lm);
+
+        feat.landmark_id_ = lm->Id();
+        feat.has_landmark = true;
+        feat.is_outlier = false;
+    }
+}
+
+void Tracking::CullLandmarks() {
+    if (!map_) {
+        return;
+    }
+    if (map_->LandmarkSize() < static_cast<size_t>(options_.min_landmarks_for_culling)) {
+        return;
+    }
+
+    std::vector<uint64_t> to_remove;
+    for (const auto& kv : map_->Landmarks()) {
+        const auto& lm = kv.second;
+        if (!lm) {
+            continue;
+        }
+        if (lm->IsBad()) {
+            to_remove.push_back(lm->Id());
+            continue;
+        }
+        if (lm->ObservationCount() < static_cast<size_t>(options_.min_landmark_observations)) {
+            lm->SetBad();
+            to_remove.push_back(lm->Id());
+            continue;
+        }
+
+        double err_sum = 0.0;
+        int cnt = 0;
+        bool large_error = false;
+
+        for (const auto& [kf_id, feat_idx] : lm->Observations()) {
+            auto frame = map_->GetFrame(kf_id);
+            if (!frame) {
+                continue;
+            }
+            if (feat_idx >= frame->Features().size()) {
+                continue;
+            }
+            auto& feat = frame->Features()[feat_idx];
+            if (!feat.has_landmark || feat.landmark_id_ != lm->Id()) {
+                continue;
+            }
+
+            const auto cam = frame->GetCamera();
+            if (!cam) {
+                continue;
+            }
+
+            Eigen::Vector2d proj;
+            if (!ProjectToPixel(*cam, frame->Pose(), lm->Position(), proj)) {
+                continue;
+            }
+
+            const double err = (feat.position - proj).norm();
+            err_sum += err;
+            cnt++;
+
+            if (err > options_.landmark_max_reproj_error * 2.0) {
+                large_error = true;
+                break;
+            }
+        }
+
+        if (cnt == 0) {
+            lm->SetBad();
+            to_remove.push_back(lm->Id());
+            continue;
+        }
+
+        if (large_error || (err_sum / cnt) > options_.landmark_max_reproj_error) {
+            lm->SetBad();
+            to_remove.push_back(lm->Id());
+        }
+    }
+
+    if (to_remove.empty()) {
+        return;
+    }
+
+    for (auto id : to_remove) {
+        auto lm = map_->GetLandmark(id);
+        if (!lm) {
+            continue;
+        }
+        for (const auto& [kf_id, feat_idx] : lm->Observations()) {
+            auto frame = map_->GetFrame(kf_id);
+            if (!frame || feat_idx >= frame->Features().size()) {
+                continue;
+            }
+            auto& feat = frame->Features()[feat_idx];
+            if (feat.landmark_id_ == id) {
+                feat.landmark_id_ = 0;
+                feat.has_landmark = false;
+                feat.is_outlier = true;
+            }
+        }
+        map_->RemoveLandmark(id);
+    }
+
+    LOG(INFO) << "[Tracking] Culled landmarks: " << to_remove.size();
+}
+
+void Tracking::RemoveKeyFrame(const Frame::Ptr& keyframe) {
+    if (!map_ || !keyframe) {
+        return;
+    }
+
+    const uint64_t kf_id = keyframe->Id();
+    for (auto& feat : keyframe->Features()) {
+        if (!feat.has_landmark) {
+            continue;
+        }
+        auto lm = map_->GetLandmark(feat.landmark_id_);
+        if (!lm) {
+            continue;
+        }
+        lm->RemoveObservation(kf_id);
+        feat.landmark_id_ = 0;
+        feat.has_landmark = false;
+        feat.is_outlier = true;
+    }
+
+    map_->RemoveKeyFrame(kf_id);
+}
+
+void Tracking::CullKeyFrames() {
+    if (!map_) {
+        return;
+    }
+
+    const auto& keyframes = map_->KeyFrames();
+    if (keyframes.size() <= static_cast<size_t>(options_.min_keyframes_for_culling)) {
+        return;
+    }
+
+    const bool exceeded =
+        options_.max_keyframes > 0 &&
+        keyframes.size() > static_cast<size_t>(options_.max_keyframes);
+
+    Frame::Ptr to_remove = nullptr;
+    double removed_ratio = 0.0;
+
+    for (const auto& kv : keyframes) {
+        const auto& kf = kv.second;
+        if (!kf) {
+            continue;
+        }
+        if (kf == last_keyframe_ || kf == init_frame_) {
+            continue;
+        }
+        if (current_frame_ && kf->Id() == current_frame_->Id()) {
+            continue;
+        }
+
+        int total = 0;
+        int redundant = 0;
+
+        for (const auto& feat : kf->Features()) {
+            if (!feat.has_landmark) {
+                continue;
+            }
+            total++;
+            auto lm = map_->GetLandmark(feat.landmark_id_);
+            if (!lm || lm->IsBad()) {
+                continue;
+            }
+            if (lm->ObservationCount() >=
+                static_cast<size_t>(options_.kf_min_shared_observations)) {
+                redundant++;
+            }
+        }
+
+        if (total == 0) {
+            continue;
+        }
+
+        const double ratio = static_cast<double>(redundant) / static_cast<double>(total);
+        if (ratio > options_.kf_redundant_ratio && (exceeded || ratio > 0.95)) {
+            to_remove = kf;
+            removed_ratio = ratio;
+            break;
+        }
+    }
+
+    if (to_remove) {
+        RemoveKeyFrame(to_remove);
+        LOG(INFO) << "[Tracking] Culled keyframe " << to_remove->Id()
+                  << ", redundant_ratio=" << removed_ratio;
+        CullLandmarks();
+    }
 }
 
 // ================= 三角化 =================
@@ -554,12 +867,48 @@ void Tracking::TriangulateWithLastKeyFrame(Frame::Ptr last_frame, Frame::Ptr cur
     auto P1 = ProjectionMatrix(last_frame->Pose(), *cam);
     auto P2 = ProjectionMatrix(curr_frame->Pose(), *cam);
 
+    const double min_angle_rad =
+        options_.triangulation_min_angle_deg * M_PI / 180.0;
+
     for (const auto& m : matches) {
         const auto& px1 = last_frame->Features()[m.queryIdx].position;
         const auto& px2 = curr_frame->Features()[m.trainIdx].position;
+        if (last_frame->Features()[m.queryIdx].has_landmark ||
+            curr_frame->Features()[m.trainIdx].has_landmark) {
+            continue;
+        }
+
+        // 视差角检查（避免几何退化）
+        Eigen::Vector3d f1 = last_frame->GetCamera()->pixelToCamera(px1, 1.0).normalized();
+        Eigen::Vector3d f2 = curr_frame->GetCamera()->pixelToCamera(px2, 1.0).normalized();
+        Eigen::Matrix3d R1 = last_frame->Pose().inverse().rotationMatrix();
+        Eigen::Matrix3d R2 = curr_frame->Pose().inverse().rotationMatrix();
+        Eigen::Vector3d f1w = R1 * f1;
+        Eigen::Vector3d f2w = R2 * f2;
+        double cos_angle = f1w.dot(f2w) / (f1w.norm() * f2w.norm());
+        cos_angle = std::clamp(cos_angle, -1.0, 1.0);
+        const double angle = std::acos(cos_angle);
+        if (angle < min_angle_rad) {
+            continue;
+        }
 
         Eigen::Vector3d pw = TriangulatePoint(P1, P2, px1, px2);
-        if (pw.z() <= 0) {
+        if (!pw.allFinite()) {
+            continue;
+        }
+
+        Eigen::Vector2d reproj1, reproj2;
+        if (!ProjectToPixel(*last_frame->GetCamera(), last_frame->Pose(), pw, reproj1)) {
+            continue;
+        }
+        if (!ProjectToPixel(*cam, curr_frame->Pose(), pw, reproj2)) {
+            continue;
+        }
+
+        const double err1 = (reproj1 - px1).norm();
+        const double err2 = (reproj2 - px2).norm();
+        if (err1 > options_.triangulation_max_reproj_error ||
+            err2 > options_.triangulation_max_reproj_error) {
             continue;
         }
 
@@ -569,7 +918,11 @@ void Tracking::TriangulateWithLastKeyFrame(Frame::Ptr last_frame, Frame::Ptr cur
         map_->InsertLandmark(lm);
 
         last_frame->Features()[m.queryIdx].landmark_id_ = lm->Id();
+        last_frame->Features()[m.queryIdx].has_landmark = true;
+        last_frame->Features()[m.queryIdx].is_outlier = false;
         curr_frame->Features()[m.trainIdx].landmark_id_ = lm->Id();
+        curr_frame->Features()[m.trainIdx].has_landmark = true;
+        curr_frame->Features()[m.trainIdx].is_outlier = false;
     }
 
     LOG(INFO) << "[Tracking] Triangulated " << matches.size() << " landmarks.";

@@ -19,7 +19,8 @@ public:
 
     void run(Dataset::Ptr dataset);
     // 单帧接口（供测试 / dataset loop 调用）
-    void ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image);
+    void ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image,
+                      const cv::Mat& depth);
 
 private:
     Camera::Ptr camera_;

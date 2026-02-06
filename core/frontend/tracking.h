@@ -6,6 +6,7 @@
 #include <sophus/se3.hpp>
 #include <vector>
 
+#include "backend/local_ba.h"
 #include "feature/feature_extractor.h"
 #include "feature/feature_matcher.h"
 #include "frame/frame.h"
@@ -26,6 +27,30 @@ public:
         int min_keyframe_inliers = 50;
         double min_parallax = 10.0;     // 像素
         double max_reproj_error = 2.0;  // 最大重投影误差（像素）
+        int min_keyframe_gap = 3;       // 关键帧间最小帧间隔
+        bool enable_culling = false;
+
+        // ===== Map culling =====
+        int min_landmark_observations = 2;
+        int min_landmarks_for_culling = 200;
+        int min_keyframes_for_culling = 3;
+        int max_keyframes = 30;
+        int kf_min_shared_observations = 3;
+        double kf_redundant_ratio = 0.9;
+        double landmark_max_reproj_error = 5.0;
+
+        // ===== Triangulation =====
+        double triangulation_max_reproj_error = 5.0;
+        double triangulation_min_angle_deg = 1.0;
+
+        // ===== Local BA =====
+        bool enable_local_ba = true;
+        int ba_window_size = 5;
+        int ba_iterations = 5;
+        int ba_min_pose_observations = 20;
+        int ba_min_point_observations = 2;
+        double ba_huber_delta = 5.0;
+        double ba_max_reproj_error = 5.0;
     };
 
     Tracking(const Options& options, std::shared_ptr<FeatureExtractor> extractor,
@@ -56,6 +81,11 @@ private:
 
     bool NeedNewKeyFrame() const;
     void CreateKeyFrame();
+
+    void CullLandmarks();
+    void CullKeyFrames();
+    void RemoveKeyFrame(const Frame::Ptr& keyframe);
+    void CreateLandmarksFromDepth(const Frame::Ptr& frame);
 
     // ===== 三角化（暂不入 Map）=====
     Eigen::Matrix<double, 3, 4> ProjectionMatrix(const Sophus::SE3d& T_cw, const Camera& cam) const;
@@ -88,6 +118,8 @@ private:
 
     std::shared_ptr<Map> map_;
     uint64_t landmark_id_ = 0;
+
+    std::unique_ptr<LocalBA> local_ba_;
 };
 
 }  // namespace visionx

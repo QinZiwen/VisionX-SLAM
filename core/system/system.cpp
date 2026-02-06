@@ -43,16 +43,18 @@ void System::run(Dataset::Ptr dataset) {
             LOG(INFO) << "System::run ...";
             for (size_t i = 0; i < images.size(); ++i) {
                 LOG(INFO) << "Processing image " << images[i].rgb_path;
-                ProcessFrame(static_cast<uint64_t>(i), images[i].timestamp,
-                             cv::imread(images[i].rgb_path));
+                cv::Mat rgb = cv::imread(images[i].rgb_path, cv::IMREAD_COLOR);
+                cv::Mat depth = cv::imread(images[i].depth_path, cv::IMREAD_UNCHANGED);
+                ProcessFrame(static_cast<uint64_t>(i), images[i].timestamp, rgb, depth);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         },
         dataset);
 }
 
-void System::ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image) {
-    auto frame = std::make_shared<Frame>(id, timestamp, camera_, image);
+void System::ProcessFrame(uint64_t id, double timestamp, const cv::Mat& image,
+                          const cv::Mat& depth) {
+    auto frame = std::make_shared<Frame>(id, timestamp, camera_, image, depth);
 
     LOG(INFO) << "Processing frame " << id << ", timestamp " << std::fixed << std::setprecision(6)
               << timestamp << "";

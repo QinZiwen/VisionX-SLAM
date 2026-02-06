@@ -16,6 +16,8 @@ public:
 
     void InsertKeyFrame(Frame::Ptr frame);
     void InsertLandmark(Landmark::Ptr landmark);
+    void RemoveKeyFrame(uint64_t id);
+    void RemoveLandmark(uint64_t id);
     void removeAll();
 
     Frame::Ptr GetFrame(uint64_t id) const;

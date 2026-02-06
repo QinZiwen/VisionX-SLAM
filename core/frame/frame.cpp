@@ -4,12 +4,14 @@
 
 namespace visionx {
 
-Frame::Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera, const cv::Mat& image)
+Frame::Frame(uint64_t id, double timestamp, std::shared_ptr<Camera> camera, const cv::Mat& image,
+             const cv::Mat& depth)
     : id_(id),
       timestamp_(timestamp),
       T_cw_(Sophus::SE3d()),
       camera_(std::move(camera)),
-      image_(image.clone()) {}
+      image_(image.clone()),
+      depth_(depth.clone()) {}
 
 Sophus::SE3d Frame::Pose() const {
     std::lock_guard<std::mutex> lock(pose_mutex_);
@@ -28,7 +30,8 @@ Frame::Ptr Frame::Clone(bool need_feature) const {
         current_pose = T_cw_;
     }
 
-    auto new_frame = std::make_shared<Frame>(id_, timestamp_, camera_, image_.clone());
+    auto new_frame = std::make_shared<Frame>(id_, timestamp_, camera_, image_.clone(),
+                                             depth_.clone());
     new_frame->SetPose(current_pose);
 
     if (need_feature) {
